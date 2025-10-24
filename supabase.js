@@ -1,10 +1,13 @@
 const { createClient } = require('@supabase/supabase-js');
 
-const supabaseUrl = process.env.SUPABASE_URL || 'https://oqfqlsxnsbkxersgoher.supabase.co';
-const supabaseKey = process.env.SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9xZnFsc3huc2JreGVyc2dvaGVyIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MTIzNDQwNiwiZXhwIjoyMDc2ODEwNDA2fQ.3YOSvu0WchFn--M_nrdGdksiAH5SukfDWlBK6Lq-H28';
+// Берём URL и ключ из environment variables (Variables в хосте)
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_KEY;
 
-console.log('Supabase URL:', supabaseUrl ? 'Provided' : 'Missing');
-console.log('Supabase Key:', supabaseKey ? 'Provided' : 'Missing');
+if (!supabaseUrl || !supabaseKey) {
+  console.error("❌ SUPABASE_URL или SUPABASE_KEY не установлены в environment variables!");
+  process.exit(1);
+}
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
