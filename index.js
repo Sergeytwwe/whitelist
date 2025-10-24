@@ -7,11 +7,10 @@ app.use(express.json());
 
 // Вспомогательные функции для вычислений (в точности как в клиенте)
 function computeNewFirst(r1) {
-  // 3*r1^2 + 7*r1 - 19
   return 3 * (r1 * r1) + 7 * r1 - 19;
 }
+
 function computeNewSecond(r2) {
-  // 5*r2^3 - 11*r2 + 42
   return 5 * (r2 * r2 * r2) - 11 * r2 + 42;
 }
 
@@ -24,9 +23,11 @@ app.post('/check', async (req, res) => {
     if (!key) {
       return res.status(400).json({ status: 'deny', message: 'Missing key' });
     }
-    if (typeof first_val ~= 'number' && typeof first_val !== 'number') {
-      // allow string-numbers too
-    }
+
+    // Приведение значений к числу
+    const r1 = Number(first_val) || 0;
+    const r2 = Number(second_val) || 0;
+
     // Получаем запись по ключу
     const { data, error } = await supabase
       .from('whitelist')
@@ -52,7 +53,6 @@ app.post('/check', async (req, res) => {
 
       if (upErr) {
         console.error('Failed to update hwid:', upErr);
-        // не критично — просто логируем, но продолжаем проверку
       } else {
         data.hwid = hwid;
       }
@@ -63,13 +63,11 @@ app.post('/check', async (req, res) => {
       return res.status(200).json({ status: 'deny', message: 'HWID mismatch' });
     }
 
-    // Генерируем новые проверочные значения на основе пришедших rng
-    const r1 = Number(first_val) || 0;
-    const r2 = Number(second_val) || 0;
+    // Вычисляем проверочные значения
     const newfirst = computeNewFirst(r1);
     const newsecond = computeNewSecond(r2);
 
-    // Ответ в формате, который ожидает клиент
+    // Ответ клиенту
     return res.json({
       status: 'allow',
       newfirst_val: newfirst,
