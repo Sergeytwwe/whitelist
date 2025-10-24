@@ -1,41 +1,100 @@
 const express = require('express');
-const supabase = require('./supabase'); // твой supabase.js
+const supabase = require('./supabase');
 const app = express();
 const port = process.env.PORT || 3000;
 
 app.use(express.json());
 
-// POST /whitelist — проверяем только ключ
-app.post('/whitelist', async (req, res) => {
+// Вспомогательные функции для вычислений (в точности как в клиенте)
+function computeNewFirst(r1) {
+  // 3*r1^2 + 7*r1 - 19
+  return 3 * (r1 * r1) + 7 * r1 - 19;
+}
+function computeNewSecond(r2) {
+  // 5*r2^3 - 11*r2 + 42
+  return 5 * (r2 * r2 * r2) - 11 * r2 + 42;
+}
+
+// POST /check
+// Body: { hwid, key, first_val, second_val }
+app.post('/check', async (req, res) => {
   try {
-    const { whitelistkey } = req.body;
+    const { hwid, key, first_val, second_val } = req.body;
 
-    if (!whitelistkey) {
-      return res.json({ message: "Missing whitelistkey", valid: false });
+    if (!key) {
+      return res.status(400).json({ status: 'deny', message: 'Missing key' });
     }
-
-    console.log('Checking key in database:', whitelistkey);
-
+    if (typeof first_val ~= 'number' && typeof first_val !== 'number') {
+      // allow string-numbers too
+    }
+    // Получаем запись по ключу
     const { data, error } = await supabase
       .from('whitelist')
-      .select('whitelistkey')
-      .eq('whitelistkey', whitelistkey)
+      .select('*')
+      .eq('whitelistkey', key)
       .maybeSingle();
 
     if (error) {
-      console.error('Database error:', error);
-      return res.json({ message: "Database query failed", error: error.message, valid: false });
+      console.error('Supabase error:', error);
+      return res.status(500).json({ status: 'error', message: 'Database query failed' });
     }
 
     if (!data) {
-      return res.json({ message: "Key not found in database", valid: false });
+      return res.status(200).json({ status: 'deny', message: 'Key not found' });
     }
 
-    return res.json({ valid: true, message: "Key found" });
+    // Если hwid в БД пустой -> сохраняем привязку
+    if (!data.hwid && hwid) {
+      const { error: upErr } = await supabase
+        .from('whitelist')
+        .update({ hwid: hwid })
+        .eq('whitelistkey', key);
 
-  } catch (error) {
-    console.error('Unexpected error:', error);
-    res.json({ message: "Internal server error", error: error.message, valid: false });
+      if (upErr) {
+        console.error('Failed to update hwid:', upErr);
+        // не критично — просто логируем, но продолжаем проверку
+      } else {
+        data.hwid = hwid;
+      }
+    }
+
+    // Если hwid в БД существует и не совпадает с присланным => deny
+    if (data.hwid && hwid && data.hwid !== hwid) {
+      return res.status(200).json({ status: 'deny', message: 'HWID mismatch' });
+    }
+
+    // Генерируем новые проверочные значения на основе пришедших rng
+    const r1 = Number(first_val) || 0;
+    const r2 = Number(second_val) || 0;
+    const newfirst = computeNewFirst(r1);
+    const newsecond = computeNewSecond(r2);
+
+    // Ответ в формате, который ожидает клиент
+    return res.json({
+      status: 'allow',
+      newfirst_val: newfirst,
+      newsecond_val: newsecond,
+      is_dev: !!data.is_dev,
+      days: Number(data.days) || 0,
+      message: 'Allowed'
+    });
+
+  } catch (err) {
+    console.error('Unexpected error /check:', err);
+    return res.status(500).json({ status: 'error', message: 'Internal server error' });
+  }
+});
+
+// POST /log
+// Body: { key, placeName, ip, note? }
+app.post('/log', async (req, res) => {
+  try {
+    const { key, placeName, ip, note } = req.body;
+    await supabase.from('logs').insert([{ whitelistkey: key, place_name: placeName, ip: ip, note: note || null }]);
+    return res.json({ status: 'success' });
+  } catch (err) {
+    console.error('Log insert failed:', err);
+    return res.status(500).json({ status: 'error' });
   }
 });
 
